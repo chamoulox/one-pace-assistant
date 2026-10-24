@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v0.1.1 (2026-10-24)
+
+### Bug Fixes
+
+- Fix chapter structure
+  ([`cd39272`](https://github.com/chamoulox/one-pace-assistant/commit/cd39272f74b606bec7edb86f5b86946d37902d7f))
+
+
 ## v0.1.0 (2026-10-23)
 
 ### Bug Fixes
