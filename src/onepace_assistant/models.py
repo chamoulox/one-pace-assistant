@@ -1,6 +1,8 @@
 """Data models for One Pace metadata."""
 
-from pydantic import AliasChoices, BaseModel, Field
+from typing import Any
+
+from pydantic import AliasChoices, BaseModel, Field, field_validator
 
 
 class Playlist(BaseModel):
@@ -43,6 +45,39 @@ class Arc(BaseModel):
     special: bool = Field(default=False, description="Whether this is a special/side story")
     chapters: str | None = Field(default=None, description="Manga chapter range")
     episodes: str | None = Field(default=None, description="Anime episode range")
+
+    @field_validator("chapters", "episodes", mode="before")
+    @classmethod
+    def _render_range_object(cls, value: Any) -> Any:
+        """onepace.net sometimes sends a structured range instead of a string.
+
+        As of late 2026 it can look like::
+
+            {"terms": [{"from": 890, "to": 894}, {"text": "Fan Letter"}],
+             "coverStories": False}
+
+        instead of a plain ``"890-894"`` string. Render it back to text so the
+        rest of the app (which only ever displays this value) keeps working.
+        Anything we don't recognise is left as-is, so Pydantic's normal
+        "must be a string" error still surfaces instead of silently losing
+        the arc's chapters/episodes.
+        """
+        if not isinstance(value, dict) or "terms" not in value:
+            return value
+
+        parts = []
+        for term in value.get("terms") or []:
+            if not isinstance(term, dict):
+                continue
+            text = term.get("text")
+            start, end = term.get("from"), term.get("to")
+            if text is not None:
+                parts.append(str(text))
+            elif start is not None and end is not None:
+                parts.append(str(start) if start == end else f"{start}-{end}")
+            elif start is not None:
+                parts.append(str(start))
+        return ", ".join(parts) if parts else None
     backdrops: list[Backdrop] = Field(default_factory=list)
     play_groups: list[PlayGroup] = Field(default_factory=list, alias="playGroups")
 

@@ -82,3 +82,37 @@ class TestArc:
             }
         )
         assert arc.get_playlist(resolution=1080, sub="en", dub="ja").id == "abc"
+
+    def test_renders_structured_chapters_and_episodes(self):
+        """onepace.net sometimes sends {"terms": [...], "coverStories": bool}
+        instead of a plain string for chapters/episodes (seen on e.g. Wano)."""
+        arc = Arc.model_validate(
+            {
+                "slug": "wano",
+                "title": "Wano",
+                "chapters": {"terms": [{"from": 909, "to": 1057}], "coverStories": False},
+                "episodes": {
+                    "terms": [
+                        {"from": 890, "to": 894},
+                        {"from": 897, "to": 906},
+                        {"from": 908, "to": 1028},
+                        {"from": 1031, "to": 1083},
+                        {"from": 1085, "to": 1085},
+                    ],
+                    "coverStories": False,
+                },
+            }
+        )
+        assert arc.chapters == "909-1057"
+        assert arc.episodes == "890-894, 897-906, 908-1028, 1031-1083, 1085"
+q
+    def test_renders_text_term(self):
+        """Non-numeric specials (e.g. 'One Piece Fan Letter') use a 'text' term."""
+        arc = Arc.model_validate(
+            {
+                "slug": "one-piece-fan-letter",
+                "title": "One Piece Fan Letter",
+                "chapters": {"terms": [{"text": "One Piece Fan Letter"}], "coverStories": False},
+            }
+        )
+        assert arc.chapters == "One Piece Fan Letter"
