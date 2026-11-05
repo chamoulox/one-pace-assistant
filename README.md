@@ -127,7 +127,21 @@ Get detailed information about a specific arc, including available languages and
 onepace info romance-dawn
 onepace info water-seven
 onepace info wano
+
+# Fetch French metadata or combine selected site languages
+onepace info wano --language fr
+onepace info wano -l fr -l en
+
+# Discover and fetch all site languages (multiple network requests)
+onepace info wano --all-languages
 ```
+
+Without language options, `info` uses English metadata. Repeat `--language` for
+multiple site language codes, such as `fr`, `en`, or `pt-BR`. The first requested
+language supplies the displayed title and description; playlists are merged
+without duplicate language/cut entries. Failed language fetches produce warnings;
+the command fails if none succeed. Site locales do not guarantee every arc has a
+playlist in that language.
 
 **Example output:**
 ```
@@ -159,6 +173,12 @@ onepace download romance-dawn
 onepace download romance-dawn --resolution 720
 onepace download romance-dawn -r 480
 
+# Download Japanese audio with French subtitles
+onepace download wano --sub fr --dub ja
+
+# Choose the extended cut with French subtitles
+onepace download wano --sub fr --variant extended
+
 # Download English dub version (no subtitles)
 onepace download romance-dawn --dub en --sub none
 
@@ -181,6 +201,13 @@ onepace download romance-dawn --no-resume
 # Include posters from a local directory
 onepace download romance-dawn --posters-dir ~/posters
 ```
+
+An explicit `--sub` language selects the corresponding site metadata automatically.
+`--sub none` requests no subtitles. With subtitles omitted, existing English/Japanese
+defaults apply; other dub codes select their matching site locale and prefer no
+subtitles, then subtitles matching the dub language. Subtitle and
+audio availability must match a published playlist. Downloads select one language
+combination per invocation.
 
 **Download Methods:**
 
@@ -215,7 +242,7 @@ To avoid interruptions and support the service that makes these downloads possib
 |--------|-------|---------|-------------|
 | `--output` | `-o` | `./downloads` | Output directory |
 | `--resolution` | `-r` | `1080` | Video resolution (480, 720, 1080) |
-| `--sub` | `-s` | auto | Subtitle language (en, none) |
+| `--sub` | `-s` | auto | Subtitle language (e.g., en, fr, pt-BR, none) |
 | `--dub` | `-d` | `ja` | Audio language (ja, en) |
 | `--variant` | — | — | Arc variant (e.g., `extended` for extended dub) |
 | `--dry-run` | `-n` | — | Preview without downloading |

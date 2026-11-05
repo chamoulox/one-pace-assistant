@@ -17,7 +17,11 @@ class PlayGroup(BaseModel):
 
     sub: str | None = Field(default=None, description="Subtitle language code")
     dub: str = Field(description="Audio/dub language code")
-    variant: str | None = Field(default=None, description="Variant type (e.g., 'extended')")
+    variant: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("variant", "cut"),
+        description="Variant type (e.g., 'extended')",
+    )
     variant_title: str | None = Field(
         default=None, alias="variantTitle", description="Display name for variant"
     )
