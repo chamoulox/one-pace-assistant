@@ -17,7 +17,7 @@ from .downloader import (
 )
 from .nfo import generate_arc_nfos, generate_tvshow_nfo
 from .poster_utils import copy_poster_to_arc_dir, find_poster_for_arc
-from .scraper import ScraperError, fetch_metadata_sync
+from .scraper import ScraperError, discover_languages_sync, fetch_metadata_sync, merge_arcs
 from .syncer import (
     SyncError,
     SyncOptions,
@@ -106,14 +106,32 @@ def list(ctx: click.Context, include_all: bool, output_format: str) -> None:
 
 @cli.command()
 @click.argument("arc_slug")
+@click.option(
+    "-l", "--language", "languages", multiple=True,
+    help="Site language code; repeat for multiple languages (e.g. fr, en, pt-BR).",
+)
+@click.option("--all-languages", is_flag=True, help="Fetch all advertised site languages.")
 @click.pass_context
-def info(ctx: click.Context, arc_slug: str) -> None:
+def info(
+    ctx: click.Context, arc_slug: str, languages: tuple[str, ...], all_languages: bool
+) -> None:
     """Show detailed information about an arc."""
+    if all_languages and languages:
+        raise click.UsageError("Use either --language or --all-languages")
     try:
-        arcs = fetch_metadata_sync()
+        selected = discover_languages_sync() if all_languages else (languages or ("en",))
+        collections = []
+        for language in dict.fromkeys(selected):
+            try:
+                collections.append(fetch_metadata_sync(language))
+            except ScraperError as e:
+                console.print(f"[yellow]Warning: {e}[/yellow]")
+        if not collections:
+            raise ScraperError("No requested language metadata could be loaded")
+        arcs = merge_arcs(collections)
     except ScraperError as e:
         console.print(f"[red]Error fetching metadata: {e}[/red]")
-        raise SystemExit(1)
+        raise SystemExit(1) from e
 
     # Find the arc
     arc = next((a for a in arcs if a.slug == arc_slug), None)
@@ -164,8 +182,11 @@ def info(ctx: click.Context, arc_slug: str) -> None:
     default="1080",
     help="Video resolution",
 )
-@click.option("-s", "--sub", default=None, help="Subtitle language (en, none, or omit for auto)")
-@click.option("-d", "--dub", default="ja", help="Audio language (ja, en)")
+@click.option(
+    "-s", "--sub", default=None,
+    help="Subtitle language (e.g. en, fr, pt-BR, none; omit for auto)",
+)
+@click.option("-d", "--dub", default="ja", help="Audio language code (e.g. ja, en)")
 @click.option(
     "--variant",
     default=None,
@@ -199,7 +220,7 @@ def download(
     arc_slug: str,
     output_dir: Path,
     resolution: str,
-    sub: str,
+    sub: str | None,
     dub: str,
     variant: str | None,
     dry_run: bool,
@@ -225,7 +246,10 @@ def download(
         console.print("[cyan]Fetching arc metadata...[/cyan]")
 
     try:
-        arcs = fetch_metadata_sync()
+        language = sub if sub and sub.lower() != "none" else (
+            dub if dub not in ("ja", "en") else "en"
+        )
+        arcs = fetch_metadata_sync(language)
     except ScraperError as e:
         console.print(f"[red]Error fetching metadata: {e}[/red]")
         raise SystemExit(1)
@@ -243,15 +267,17 @@ def download(
     
     if sub is None:
         # Auto-detect based on dub language
-        if dub == "en":
-            # Try English dub without subs first, fall back to with subs
+        if dub != "ja":
+            # Prefer a dub without subtitles, then subtitles in the dub language.
             playlist = arc.get_playlist(resolution=int(resolution), sub=None, dub=dub, variant=variant)
             if playlist:
                 actual_sub = "none"
             else:
-                playlist = arc.get_playlist(resolution=int(resolution), sub="en", dub=dub, variant=variant)
+                playlist = arc.get_playlist(
+                    resolution=int(resolution), sub=dub, dub=dub, variant=variant
+                )
                 if playlist:
-                    actual_sub = "en"
+                    actual_sub = dub
         else:
             # For non-English dubs, default to English subs
             playlist = arc.get_playlist(resolution=int(resolution), sub="en", dub=dub, variant=variant)

@@ -105,7 +105,7 @@ class TestArc:
         )
         assert arc.chapters == "909-1057"
         assert arc.episodes == "890-894, 897-906, 908-1028, 1031-1083, 1085"
-q
+
     def test_renders_text_term(self):
         """Non-numeric specials (e.g. 'One Piece Fan Letter') use a 'text' term."""
         arc = Arc.model_validate(

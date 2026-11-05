@@ -20,43 +20,28 @@ class ScraperError(Exception):
 
 def _unescape_rsc_string(s: str) -> str:
     """Unescape the RSC payload string."""
-    # RSC payloads have escaped quotes and special chars
-    return (
-        s.replace('\\"', '"')
-        .replace("\\n", "\n")
-        .replace("\\\\", "\\")
-    )
+    try:
+        return json.loads('"' + s + '"')
+    except json.JSONDecodeError as e:
+        raise ScraperError(f"Invalid RSC string: {e}") from e
 
 
 def _extract_arcs_array(payload: str) -> list[dict]:
     """Extract the arcs data array from the RSC payload (supports modern and legacy formats)."""
     # 1. Handle timeline-based segments (current site version)
     # 2. Fallback for legacy data property structure
-    patterns = [
-        r'"timeline":\s*\{.*?"segments":\s*(\[)',
-        r'"data":\s*(\[{"slug":")'
-    ]
+    patterns = [r'"timeline":\s*\{.*?"segments":\s*(\[)', r'"data":\s*(\[{"slug":")']
 
     for pattern in patterns:
         match = re.search(pattern, payload, re.DOTALL)
         if not match:
             continue
 
-        # Extract the array using bracket matching
-        start_idx = match.start(1)
-        arr_str = payload[start_idx:]
-
-        bracket_count = 0
-        for i, c in enumerate(arr_str):
-            if c == '[':
-                bracket_count += 1
-            elif c == ']':
-                bracket_count -= 1
-                if bracket_count == 0:
-                    try:
-                        return json.loads(arr_str[:i + 1])
-                    except json.JSONDecodeError:
-                        break  # Try next pattern
+        try:
+            value, _ = json.JSONDecoder().raw_decode(payload[match.start(1) :])
+            return value
+        except json.JSONDecodeError:
+            continue
 
     raise ScraperError("Could not extract arcs data from RSC payload")
 
@@ -113,7 +98,7 @@ def parse_arcs_from_html(html: str) -> list[Arc]:
     return arcs
 
 
-async def fetch_metadata() -> list[Arc]:
+async def fetch_metadata(language: str = "en") -> list[Arc]:
     """Fetch and parse all arc metadata from onepace.net."""
     async with httpx.AsyncClient(
         headers={
@@ -121,13 +106,16 @@ async def fetch_metadata() -> list[Arc]:
         },
         timeout=30.0,
     ) as client:
-        response = await client.get(ONEPACE_WATCH_URL)
-        response.raise_for_status()
+        try:
+            response = await client.get(_watch_url(language))
+            response.raise_for_status()
+        except httpx.HTTPError as e:
+            raise ScraperError(f"Could not fetch {language} metadata: {e}") from e
 
     return parse_arcs_from_html(response.text)
 
 
-def fetch_metadata_sync() -> list[Arc]:
+def fetch_metadata_sync(language: str = "en") -> list[Arc]:
     """Synchronous version of fetch_metadata for CLI use."""
     with httpx.Client(
         headers={
@@ -135,7 +123,59 @@ def fetch_metadata_sync() -> list[Arc]:
         },
         timeout=30.0,
     ) as client:
-        response = client.get(ONEPACE_WATCH_URL)
-        response.raise_for_status()
+        try:
+            response = client.get(_watch_url(language))
+            response.raise_for_status()
+        except httpx.HTTPError as e:
+            raise ScraperError(f"Could not fetch {language} metadata: {e}") from e
 
     return parse_arcs_from_html(response.text)
+
+
+def _watch_url(language: str) -> str:
+    """Build a locale URL without accepting arbitrary paths."""
+    if not re.fullmatch(r"[a-z]{2,3}(?:-[A-Za-z0-9]+)*", language):
+        raise ScraperError(f"Invalid language code: {language}")
+    return f"https://onepace.net/{language}/watch"
+
+
+def discover_languages_sync() -> list[str]:
+    """Discover advertised site locales from the English watch page."""
+    try:
+        with httpx.Client(timeout=30.0) as client:
+            response = client.get(ONEPACE_WATCH_URL)
+            response.raise_for_status()
+    except httpx.HTTPError as e:
+        raise ScraperError(f"Could not discover languages: {e}") from e
+    payload = extract_rsc_payload(response.text)
+    languages = re.findall(r'"og:locale(?::alternate)?"\s*,\s*"content"\s*:\s*"([^"]+)"', payload)
+    if not languages:
+        raise ScraperError("No language locales found on the watch page")
+    return list(dict.fromkeys(languages))
+
+
+def merge_arcs(collections: list[list[Arc]]) -> list[Arc]:
+    """Merge localized playlists by slug, keeping the first locale's text."""
+    merged: dict[str, Arc] = {}
+    for arcs in collections:
+        for arc in arcs:
+            if arc.slug not in merged:
+                merged[arc.slug] = arc.model_copy(deep=True)
+                continue
+            target = merged[arc.slug]
+            for group in arc.play_groups:
+                match = next(
+                    (
+                        g
+                        for g in target.play_groups
+                        if (g.sub, g.dub, g.variant) == (group.sub, group.dub, group.variant)
+                    ),
+                    None,
+                )
+                if match is None:
+                    target.play_groups.append(group.model_copy(deep=True))
+                else:
+                    for playlist in group.playlists:
+                        if playlist not in match.playlists:
+                            match.playlists.append(playlist.model_copy(deep=True))
+    return list(merged.values())
