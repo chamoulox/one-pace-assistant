@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v0.2.0 (2026-11-05)
+
+### Features
+
+- Support localized arc info and downloads
+  ([`a872624`](https://github.com/chamoulox/one-pace-assistant/commit/a8726246e9b22838ce50a9cd9784cef516f7eb5f))
+
+
 ## v0.1.1 (2026-10-24)
 
 ### Bug Fixes
